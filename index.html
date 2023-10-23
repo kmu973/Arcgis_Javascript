@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>West Virginia Recreational Trails</title>
+
+    <!-- Include ArcGIS Maps SDK for JavaScript styles -->
+    <link
+      rel="stylesheet"
+      href="https://js.arcgis.com/4.27/esri/themes/light/main.css"
+    />
+
+    <!-- Include ArcGIS Maps SDK for JavaScript script -->
+    <script src="https://js.arcgis.com/4.27/"></script>
+
+    <!-- Your custom styles can be added here if needed -->
+
+    <style>
+      /* Add any custom styles here, for instance: */
+      html,
+      body,
+      #map {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      .esri-ui-corner .esri-expand .esri-widget--panel,
+      .esri-ui-corner .esri-expand .esri-widget--panel-height-only,
+      .esri-ui-corner .esri-component > .esri-widget--panel,
+      .esri-ui-corner .esri-component.esri-widget--panel {
+        width: 240px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+
+    <!-- Add this to your HTML, preferably above or below the map div -->
+    <div id="trailFilterDiv" style="padding: 10px; background: white">
+      <label for="trailFilter">Filter by Trail Type:</label>
+      <select id="trailFilter">
+        <option value="all">All</option>
+        <option value="hiking">Hiking</option>
+        <option value="biking">Biking</option>
+        <option value="horseback">Horseback Riding</option>
+      </select>
+    </div>
+
+    <script>
+      require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/FeatureLayer",
+        "esri/widgets/Home",
+        "esri/PopupTemplate",
+        "esri/widgets/Expand",
+        "esri/widgets/Search",
+        "esri/widgets/AreaMeasurement2D",
+        "esri/widgets/DistanceMeasurement2D",
+      ], function (
+        Map,
+        MapView,
+        FeatureLayer,
+        Home,
+        PopupTemplate,
+        Expand,
+        Search,
+        AreaMeasurement2D,
+        DistanceMeasurement2D
+      ) {
+        // Create a Map instance
+        var map = new Map({
+          basemap: "topo", // This sets the basemap to "topo". Change this value if you want another basemap.
+        });
+
+        // Create a MapView instance (ties the map to the DOM)
+        var view = new MapView({
+          container: "map", // This is the id of the div where the map should be rendered
+          map: map,
+          zoom: 8, // Initial zoom level
+          center: [-80.0, 38.8], // Initial center point (longitude, latitude) - roughly centered on West Virginia
+        });
+
+        // URL of your hosted feature layer - Replace with your actual URL
+        var trailLinesUrl =
+          "https://services1.arcgis.com/cTNi34MxOdcfum3A/arcgis/rest/services/WVTrailInventory_20211005_PointsLines_shp/FeatureServer/1";
+
+        // Define a simple line symbol renderer
+        var trailLinesRenderer = {
+          type: "simple",
+          symbol: {
+            type: "simple-line",
+            color: "blue",
+            width: "2px",
+            style: "solid",
+          },
+        };
+
+        // Define a popup template
+        var trailPopupTemplate = new PopupTemplate({
+          title: "{trailName}", // Assuming the field name is "trail_name"
+          content: [
+            {
+              type: "fields",
+              fieldInfos: [
+                {
+                  fieldName: "trailName",
+                  label: "Trail Name",
+                },
+                {
+                  fieldName: "trailLengt",
+                  label: "Trail Length",
+                  format: {
+                    places: 2,
+                    digitSeparator: true,
+                  },
+                },
+                {
+                  fieldName: "manageOrg",
+                  label: "Management Organization",
+                },
+              ],
+            },
+          ],
+        });
+
+        // Create the FeatureLayer with your trail lines data
+        var trailLinesLayer = new FeatureLayer({
+          url: trailLinesUrl,
+          renderer: trailLinesRenderer,
+          popupTemplate: trailPopupTemplate,
+        });
+
+        // Assume the field in your data that specifies trail type is called "trail_type"
+        var trailFilter = document.getElementById("trailFilter");
+
+        trailFilter.addEventListener("change", function () {
+          var selectedType = trailFilter.value;
+
+          if (selectedType === "all") {
+            trailLinesLayer.definitionExpression = null; // Show all trails
+          } else if (selectedType === "hiking") {
+            trailLinesLayer.definitionExpression = "hike = 'Yes'";
+          } else if (selectedType === "biking") {
+            trailLinesLayer.definitionExpression = "bike = 'Yes'";
+          } else if (selectedType === "horseback") {
+            trailLinesLayer.definitionExpression = "horse = 'Yes'";
+          }
+        });
+
+        // Add the layer to the map
+        map.add(trailLinesLayer);
+
+        // Create a home widget
+        var homeWidget = new Home({
+          view: view,
+        });
+
+        // Add the home widget to the top left corner of the view
+        view.ui.add(homeWidget, "top-left");
+
+        // Add a click event listener to the view
+        view.on("click", function (event) {
+          // Use hitTest to check for features at the clicked location
+          view.hitTest(event).then(function (response) {
+            if (response.results.length) {
+              var graphic = response.results.filter(function (result) {
+                return result.graphic.layer === trailLinesLayer;
+              })[0].graphic;
+
+              // If a trail segment was clicked, show the popup
+              if (graphic) {
+                view.popup.open({
+                  location: event.mapPoint,
+                  features: [graphic],
+                });
+              }
+            }
+          });
+        });
+
+        // Create an Expand widget instance for trail filters
+        var trailFilterExpand = new Expand({
+          <!-- expandIconClass: "esri-icon-filter",  -->
+          view: view,
+          content: document.getElementById("trailFilterDiv"),
+          expanded: false,
+        });
+
+        view.ui.add(trailFilterExpand, "top-left");
+
+        var search = new Search({
+          view: view,
+        });
+
+        view.ui.add(search, {
+          position: "top-right",
+        });
+
+        var areaMeasurementWidget = new AreaMeasurement2D({
+          view: view,
+          id: "areaMeasureWidget",
+        });
+
+        var distanceMeasurementWidget = new DistanceMeasurement2D({
+          view: view,
+          id: "distanceMeasureWidget",
+        });
+
+        view.ui.add(areaMeasurementWidget, {
+          position: "top-right",
+        });
+
+        view.ui.add(distanceMeasurementWidget, {
+          position: "top-right",
+        });
+
+        view.when(function () {
+          // Look for the measure area button using querySelector and modify its content
+          const areaButton = document.querySelector(
+            ".esri-area-measurement-2d .esri-area-measurement-2d__clear-button"
+          );
+          if (areaButton) {
+            areaButton.innerHTML = "Measure Area"; // Replace with your desired label
+          }
+
+          // Modify the distance measurement button's content
+          const distanceButton = document.querySelector(
+            ".esri-distance-measurement-2d .esri-distance-measurement-2d__clear-button"
+          );
+          if (distanceButton) {
+            distanceButton.innerHTML = "Measure Distance"; // Replace with your desired distance label
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
